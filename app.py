@@ -1,6 +1,7 @@
 import streamlit as st
 from supabase import create_client
 from datetime import datetime, date
+from streamlit_autorefresh import st_autorefresh
 
 # ---------------- CONFIG ----------------
 st.set_page_config(
@@ -11,7 +12,7 @@ st.set_page_config(
 
 # ---------------- AUTO REFRESH ----------------
 if "running" in st.session_state and st.session_state.running:
-    st.autorefresh(interval=60 * 1000, key="timer_refresh")
+    st_autorefresh(interval=60 * 1000, key="timer_refresh")
 
 # ---------------- SUPABASE ----------------
 supabase = create_client(
