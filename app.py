@@ -1,6 +1,6 @@
 import streamlit as st
 from supabase import create_client
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 
 # ---------------- CONFIG ----------------
 st.set_page_config(
@@ -9,24 +9,21 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# ---------------- AUTO REFRESH ----------------
+if "running" in st.session_state and st.session_state.running:
+    st.autorefresh(interval=60 * 1000, key="timer_refresh")
+
 # ---------------- SUPABASE ----------------
 supabase = create_client(
     st.secrets["SUPABASE_URL"],
     st.secrets["SUPABASE_KEY"]
 )
 
-# ---------------- STATE ----------------
-if "running" not in st.session_state:
-    st.session_state.running = False
-
-if "start_time" not in st.session_state:
-    st.session_state.start_time = None
-
-if "mode" not in st.session_state:
-    st.session_state.mode = "Normal"
-
-if "daily_goal" not in st.session_state:
-    st.session_state.daily_goal = 120  # minutes
+# ---------------- STATE INIT ----------------
+st.session_state.setdefault("running", False)
+st.session_state.setdefault("start_time", None)
+st.session_state.setdefault("mode", "Normal")
+st.session_state.setdefault("daily_goal", 120)
 
 # ---------------- UI ----------------
 st.title("🎯 Focus & Deep Work Tracker")
@@ -37,7 +34,7 @@ category = st.selectbox(
     ["Work", "Study", "Learning", "Personal"]
 )
 
-# ---------------- MODES ----------------
+# ---------------- MODE & GOAL ----------------
 st.subheader("⚙️ Focus Mode")
 
 st.session_state.mode = st.radio(
@@ -54,8 +51,8 @@ st.session_state.daily_goal = st.number_input(
     value=st.session_state.daily_goal
 )
 
-# ---------------- FOCUS TIMER ----------------
-FOCUS_LIMIT = 25 if st.session_state.mode.startswith("Pomodoro") else None
+# ---------------- TIMER LOGIC ----------------
+FOCUS_LIMIT = 25 if st.session_state.mode == "Pomodoro (25 min)" else None
 
 if not st.session_state.running:
     if st.button("▶ Start Focus", use_container_width=True):
@@ -64,24 +61,23 @@ if not st.session_state.running:
         else:
             st.session_state.running = True
             st.session_state.start_time = datetime.utcnow()
+            st.rerun()   # ✅ FIX 1
 else:
     now = datetime.utcnow()
-    elapsed = now - st.session_state.start_time
-    elapsed_minutes = int(elapsed.total_seconds() // 60)
+    elapsed_minutes = int((now - st.session_state.start_time).total_seconds() // 60)
 
     if FOCUS_LIMIT:
         remaining = max(0, FOCUS_LIMIT - elapsed_minutes)
-        st.metric("Pomodoro Remaining (min)", remaining)
+        st.metric("Pomodoro Remaining (minutes)", remaining)
 
         if remaining == 0:
             st.warning("Pomodoro complete! Take a 5-minute break.")
-
     else:
         st.metric("Focused Minutes", elapsed_minutes)
 
     if st.button("⏹ Stop & Save", use_container_width=True):
         end_time = datetime.utcnow()
-        duration = max(1, int((end_time - st.session_state.start_time).total_seconds() // 60))
+        duration = max(1, elapsed_minutes)
 
         supabase.table("focus_sessions").insert({
             "session_date": date.today().isoformat(),
@@ -94,7 +90,9 @@ else:
         }).execute()
 
         st.session_state.running = False
+        st.session_state.start_time = None
         st.success("Session saved")
+        st.rerun()   # ✅ FIX 2
 
 # ---------------- TODAY SUMMARY ----------------
 st.divider()
@@ -110,7 +108,6 @@ today_sessions = (
 )
 
 total_minutes = sum(s["duration_minutes"] for s in today_sessions) if today_sessions else 0
-
 st.metric("Total Focus Time (minutes)", total_minutes)
 
 # ---------------- GOAL PROGRESS ----------------
@@ -122,7 +119,7 @@ if total_minutes >= st.session_state.daily_goal:
 else:
     st.caption(f"{st.session_state.daily_goal - total_minutes} minutes to reach today’s goal")
 
-# ---------------- RECENT HISTORY ----------------
+# ---------------- HISTORY ----------------
 st.divider()
 st.subheader("🗓 Recent Sessions")
 
